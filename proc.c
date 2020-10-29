@@ -89,6 +89,11 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
 
+  /* initialize variables for waitx */
+  p->ctime = ticks;
+  p->rtime = 0;
+  p->etime = 0;
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -295,6 +300,53 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+int waitx(int *wtime, int *rtime)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one.
+        pid = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        freevm(p->pgdir);
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+
+        /* ONLY DIFF THAN wait */
+        *rtime = p->rtime;
+        p->etime = ticks;
+        *wtime = p->etime - p->ctime - p->rtime;
+
         release(&ptable.lock);
         return pid;
       }
@@ -531,4 +583,39 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+void change_time()
+{
+  acquire(&ptable.lock);
+	
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+  	if(p -> state == RUNNING)
+    {	
+      p -> rtime++;
+      
+      // #ifdef MLFQ
+      // p -> ticks[p -> queueNo]++;
+      // p -> cur_time++;     
+      // #endif
+    }
+
+  	// else
+  	// {	
+    //   #ifdef MLFQ
+    //   if(p -> queueNo != 0 && p -> wait_time > AGE) 
+    //   {
+    //     cprintf("Aging for process %d\n", p -> pid);
+    //     p -> queueNo--;
+    //     p -> cur_time = 0;
+    //     p -> wait_time = 0;
+    //     push(p -> queueNo, p);
+    //   }
+    //   #endif
+    // }  
+  }
+
+  release(&ptable.lock);
 }
