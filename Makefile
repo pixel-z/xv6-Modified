@@ -73,7 +73,7 @@ endif
 
 # default is round robin(RR) scheduler
 ifndef SCHEDULER
-	SCHEDULER := RR
+SCHEDULER := RR
 endif
 
 CC = $(TOOLPREFIX)gcc

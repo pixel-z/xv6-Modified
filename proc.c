@@ -408,7 +408,7 @@ scheduler(void)
       }
       release(&ptable.lock);
     }
-  #endif
+  #else
   #ifdef FCFS
     for(;;){
       // Enable interrupts on this processor.
@@ -429,7 +429,6 @@ scheduler(void)
 
       if (min_time_proc!=0)
       {
-        cprintf("Process %d: %s scheduled to run\n",min_time_proc->pid, min_time_proc->name);
         // Switch to chosen process.  It is the process's job
         // to release ptable.lock and then reacquire it
         // before jumping back to us.
@@ -446,6 +445,7 @@ scheduler(void)
       }
       release(&ptable.lock);
     }
+  #endif
   #endif
 }
 
