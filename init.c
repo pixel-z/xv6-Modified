@@ -19,6 +19,16 @@ main(void)
   dup(0);  // stdout
   dup(0);  // stderr
 
+  #ifdef RR
+    printf(1,"Round Robin Scheduling\n");
+
+  #else
+  #ifdef FCFS
+    printf(1,"FCFS Scheduling\n");
+
+  #endif
+  #endif
+
   for(;;){
     printf(1, "init: starting sh\n");
     pid = fork();

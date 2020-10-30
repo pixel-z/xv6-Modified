@@ -378,33 +378,72 @@ scheduler(void)
   struct cpu *c = mycpu();
   c->proc = 0;
   
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
+  #ifdef RR
+    for(;;){
+      // Enable interrupts on this processor.
+      sti();
 
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&ptable.lock);
     }
-    release(&ptable.lock);
+  #endif
+  #ifdef FCFS
+    for(;;){
+      // Enable interrupts on this processor.
+      sti();
+      struct proc* min_time_proc=0; //process with min creation time
 
-  }
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+
+        if (min_time_proc==0) 
+          min_time_proc = p;
+        else if (min_time_proc->ctime > p->ctime) 
+          min_time_proc = p;
+      }
+
+      if (min_time_proc!=0)
+      {
+        cprintf("Process %d: %s scheduled to run\n",min_time_proc->pid, min_time_proc->name);
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = min_time_proc;
+        switchuvm(min_time_proc);
+        min_time_proc->state = RUNNING;
+
+        swtch(&(c->scheduler), min_time_proc->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+      }
+      release(&ptable.lock);
+    }
+  #endif
 }
 
 // Enter scheduler.  Must hold only ptable.lock
