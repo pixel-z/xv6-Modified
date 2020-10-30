@@ -94,6 +94,9 @@ found:
   p->rtime = 0;
   p->etime = 0;
 
+  /* Default priority */
+  p->priority = 60;
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -657,4 +660,23 @@ void change_time()
   }
 
   release(&ptable.lock);
+}
+
+int set_priority(int new_priority, int pid)
+{
+  acquire(&ptable.lock);
+  int old_priority=-1;
+
+  for (struct proc* p = 0; p < &ptable.proc[NPROC]; p++)
+  {
+    if (p->pid == pid)
+    {
+      old_priority = p->priority;
+      p->priority = new_priority;
+      break;
+    }
+  }
+  
+  release(&ptable.lock);
+  return old_priority;
 }

@@ -1,11 +1,14 @@
 ### waitx 
 
-`waitx()` is a system call similar to wait() except that the calling function's runtime and wait time are also stored & retrieved.
+`waitx()` is a system call similar to wait() except that the calling function's runtime and wait time are also stored & retrieved.  
+`time.c` has been added to check the functioning of waitx. It returns runtime and wait time of the process    
+Usage: `time <command>`.
+Eg: "`time ls`"     
+`change_time()` function in proc.c has been added.
 
 Files modified: 
 - Makefile
 - defs.h
-- proc.c
 - proc.h
 - proc.c
 - syscall.h
@@ -16,11 +19,6 @@ Files modified:
 - user.h
 - usys.S
 
-`time.c` has been added to check the functioning of waitx. It returns runtime and wait time of the process    
-Usage: `time <command>`.
-Eg: "`time ls`"     
-
-`change_time()` function in proc.c has been added.
 
 ## Scheduling
 
@@ -33,3 +31,7 @@ To select a scheduler use: `make qemu SCHEDULER = <scheduler>`
 Changes:
 - proc.c - `scheduler.c()`
 - trap.c - `trap()`
+
+### PBS
+
+`setpriority()` system call implemented
