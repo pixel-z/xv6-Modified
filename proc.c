@@ -445,6 +445,50 @@ scheduler(void)
       }
       release(&ptable.lock);
     }
+  #else
+  #ifdef PBS
+    for(;;){
+      // Enable interrupts on this processor.
+      sti();
+
+      struct proc* min_priority_proc = 0;
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      {
+        if(p->state != RUNNABLE)
+          continue;
+
+        min_priority_proc = p;
+        // extra loop because for same priority process round robin
+        for (struct proc *itr = ptable.proc; itr < &ptable.proc[NPROC]; itr++)
+        {
+          if(itr->state != RUNNABLE) 
+            continue;
+          if(itr->priority < min_priority_proc->priority)
+            min_priority_proc = itr;
+        }
+        if (min_priority_proc != 0)
+        {
+          p = min_priority_proc;
+          // Switch to chosen process.  It is the process's job
+          // to release ptable.lock and then reacquire it
+          // before jumping back to us.
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+      }
+      release(&ptable.lock);
+    }
+  #endif
   #endif
   #endif
 }
@@ -664,10 +708,11 @@ void change_time()
 
 int set_priority(int new_priority, int pid)
 {
+  // cprintf("%d %d\n", new_priority, pid);
   acquire(&ptable.lock);
   int old_priority=-1;
 
-  for (struct proc* p = 0; p < &ptable.proc[NPROC]; p++)
+  for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
     if (p->pid == pid)
     {
@@ -676,7 +721,48 @@ int set_priority(int new_priority, int pid)
       break;
     }
   }
-  
   release(&ptable.lock);
   return old_priority;
+}
+
+// priority = priority of currently running process
+int checkPreempt(int priority, int samePriority)
+{
+  acquire(&ptable.lock);
+
+  // Just checking if lower priority process has come into queue
+  if (samePriority==0)
+  {
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->pid == 0) 
+        continue;
+      else if (p->priority < priority) 
+      {
+        // process with less priority found
+        release(&ptable.lock);
+        return 1;
+      }
+    }
+  }
+
+  // time slice of running process finished
+  // check if same (or less) priority process present, if not - do nothing
+  // we will apply round robin for same priority processes
+  else
+  {
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->pid == 0) 
+        continue;
+      else if (p->priority <= priority)
+      {
+        release(&ptable.lock);
+        return 1;
+      }  
+    }
+  }
+  
+  release(&ptable.lock);
+  return 0;
 }

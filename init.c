@@ -21,11 +21,13 @@ main(void)
 
   #ifdef RR
     printf(1,"Round Robin Scheduling\n");
-
   #else
   #ifdef FCFS
     printf(1,"FCFS Scheduling\n");
-
+  #else
+  #ifdef PBS
+    printf(1,"PBS Scheduling\n");
+  #endif
   #endif
   #endif
 

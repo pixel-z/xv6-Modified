@@ -64,3 +64,4 @@ struct proc {
 //   expandable heap
 
 void change_time(void);
+int checkPreempt(int, int);

@@ -106,12 +106,22 @@ trap(struct trapframe *tf)
   #ifdef FCFS
     // no yielding (non-preemptive)
   #else
+  #ifdef PBS
+    if (myproc() && myproc()->state == RUNNING)
+    {
+      if (tf->trapno == T_IRQ0+IRQ_TIMER && checkPreempt(myproc()->priority,1)==1)
+        yield();
+      else if (checkPreempt(myproc()->priority,0)==1)
+        yield();
+    }
+  #else
     // Force process to give up CPU on clock tick.
     // If interrupts were on while locks held, would need to check nlock.
     if(myproc() && myproc()->state == RUNNING &&
       tf->trapno == T_IRQ0+IRQ_TIMER)
       yield();
 
+  #endif
   #endif
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

@@ -1,3 +1,9 @@
+## Usage
+```bash
+    make clean
+    make qemu SCHEDULER=<RR,FCFS,PBS,MLFQ>
+```
+
 ### waitx 
 
 `waitx()` is a system call similar to wait() except that the calling function's runtime and wait time are also stored & retrieved.  
@@ -29,9 +35,10 @@ To select a scheduler use: `make qemu SCHEDULER = <scheduler>`
 
 ### FCFS
 Changes:
-- proc.c - `scheduler.c()`
+- proc.c - `scheduler()`
 - trap.c - `trap()`
 
 ### PBS
 
-`setpriority()` system call implemented
+`set_priority()` system call implemented
+`checkPreempt()` system call implemented
