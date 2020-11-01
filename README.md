@@ -42,3 +42,7 @@ Changes:
 
 `set_priority()` system call implemented
 `checkPreempt()` system call implemented
+
+### MLFQ 
+
+Limit for aging is kept 20.

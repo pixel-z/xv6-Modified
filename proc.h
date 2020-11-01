@@ -55,6 +55,10 @@ struct proc {
   int rtime;                   // Process total time / runtime
 
   int priority;                // Process priority
+
+  int n_run;                   // no of time proc is executed (picked by scheduler)
+  int curr_queue;              // process present in which queue
+  int ticks[5];                // no of ticks each process ran in each of 5 priority queues
 };
 
 // Process memory is laid out contiguously, low addresses first:

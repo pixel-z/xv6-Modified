@@ -766,3 +766,31 @@ int checkPreempt(int priority, int samePriority)
   release(&ptable.lock);
   return 0;
 }
+
+// system call used by ps.c to print all the active process stats
+int printpinfos()
+{
+  acquire(&ptable.lock);
+  for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if(p->pid == 0) 
+      continue;
+
+    int wtime = (p->etime - p->ctime) - (p->rtime);
+    char *state;
+
+    if (p->state==0) state = "UNUSED";
+    if (p->state==1) state = "EMBRYO";
+    if (p->state==2) state = "SLEEPING";
+    if (p->state==3) state = "RUNNABLE";
+    if (p->state==4) state = "RUNNING";
+    else             state = "ZOMBIE";
+
+    cprintf(" %d\t%d\t%s\t%d\t%d\t%d\t%d  |  %d    %d    %d    %d    %d    %d\n",
+    p-> pid, p->priority, state, p->rtime, wtime, p->n_run, p->curr_queue,
+    p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4], p->ticks[5]);
+  }
+  release(&ptable.lock);
+
+  return 0;
+}

@@ -27,6 +27,10 @@ main(void)
   #else
   #ifdef PBS
     printf(1,"PBS Scheduling\n");
+  #else
+  #ifdef MLFQ
+    printf(1,"MLFQ Scheduling\n");
+  #endif
   #endif
   #endif
   #endif

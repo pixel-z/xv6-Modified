@@ -113,3 +113,9 @@ sys_set_priority(void)
   
   return set_priority(new_priority,pid);
 }
+
+int
+sys_printpinfos(void)
+{
+  return printpinfos();
+}
