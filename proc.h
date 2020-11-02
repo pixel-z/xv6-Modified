@@ -53,12 +53,16 @@ struct proc {
   int ctime;                   // Process creation time
   int etime;                   // Process end time
   int rtime;                   // Process total time / runtime
+  int wtime;                   // resets to 0 if new queue alloted
 
   int priority;                // Process priority
 
   int n_run;                   // no of time proc is executed (picked by scheduler)
+  int ticks[5];                // no of ticks the process ran in each of 5 queues
   int curr_queue;              // process present in which queue
-  int ticks[5];                // no of ticks each process ran in each of 5 priority queues
+  int curr_ticks;              // ticks proc ran in the queue (used in time slicing)
+  int enter;                   // Used in aging
+  int change_q;                // Flag to check to change queue
 };
 
 // Process memory is laid out contiguously, low addresses first:

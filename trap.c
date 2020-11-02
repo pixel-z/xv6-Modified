@@ -115,12 +115,29 @@ trap(struct trapframe *tf)
         yield();
     }
   #else
+  #ifdef MLFQ
+    if (myproc() && myproc()->state == RUNNING)
+    {
+      if (tf->trapno == T_IRQ0 + IRQ_TIMER)
+      {
+        if(myproc()->curr_ticks >= q_ticks_max[myproc()->curr_queue])
+        {
+          change_q_flag(myproc());
+          yield();
+        }
+      }
+
+      else 		
+        incr_curr_ticks(myproc());
+    }
+  #else
     // Force process to give up CPU on clock tick.
     // If interrupts were on while locks held, would need to check nlock.
     if(myproc() && myproc()->state == RUNNING &&
       tf->trapno == T_IRQ0+IRQ_TIMER)
       yield();
 
+  #endif
   #endif
   #endif
   // Check if the process has been killed since we yielded

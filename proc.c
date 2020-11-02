@@ -6,11 +6,16 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#define AGE 20
 
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
+
+// for MLFQ
+int q_size[5] = {-1, -1, -1, -1, -1};   // gives no of processes in each queue (0 index-based)
+int q_ticks_max[5] = {1, 2, 4, 8, 16};  // max time slice in each queue
 
 static struct proc *initproc;
 
@@ -93,9 +98,17 @@ found:
   p->ctime = ticks;
   p->rtime = 0;
   p->etime = 0;
-
+  p->wtime = 0;
   /* Default priority */
   p->priority = 60;
+
+  /* MLFQ var initialization */
+  for (int i = 0; i < 5; i++)
+    p->ticks[i]=0;
+  p->n_run = 0;
+  p->curr_queue = 0;
+  p->curr_ticks = 0;
+  p->enter = 0;
 
   release(&ptable.lock);
 
@@ -157,6 +170,10 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+
+  #ifdef MLFQ
+  shift_proc_q(p,-1,0); // add proc to queue 0
+  #endif
 
   release(&ptable.lock);
 }
@@ -223,6 +240,9 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  #ifdef MLFQ
+  shift_proc_q(np,-1,0);
+  #endif
 
   release(&ptable.lock);
 
@@ -271,6 +291,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  curproc->etime = ticks;
   sched();
   panic("zombie exit");
 }
@@ -298,6 +319,9 @@ wait(void)
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
+        #ifdef MLFQ
+        shift_proc_q(p,p->curr_queue,-1); // remove proc from curr_queue
+        #endif
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
@@ -339,6 +363,9 @@ int waitx(int *wtime, int *rtime)
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
+        #ifdef MLFQ
+        shift_proc_q(p,p->curr_queue,-1); // remove proc from curr_queue
+        #endif
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
@@ -377,7 +404,7 @@ int waitx(int *wtime, int *rtime)
 void
 scheduler(void)
 {
-  struct proc *p;
+  struct proc *p=0;
   struct cpu *c = mycpu();
   c->proc = 0;
   
@@ -488,6 +515,82 @@ scheduler(void)
       }
       release(&ptable.lock);
     }
+  #else
+  #ifdef MLFQ
+    for(;;){
+      // Enable interrupts on this processor.
+      sti();
+
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+
+      // AGING
+      for (int i = 1; i <= 4; i++)
+      {
+        for (int j = 0; j <= q_size[i]; j++)
+        {
+          int age = ticks - queue[i][j]->enter;
+          if (age > AGE)
+            shift_proc_q(queue[i][j],i,i-1);  // shift from i queue i-1 queue
+        }
+      }
+      
+      for (int i = 0; i <= 4; i++)
+      {
+        if (q_size[i]>=0)
+        {
+          p = queue[i][0];
+          shift_proc_q(p,i,-1);
+          break;
+        }
+      }
+      if(p!=0 && p->state == RUNNABLE)
+      {
+        // if(p->state != RUNNABLE)
+        //   continue;
+        // cprintf("bitch run please!\n");
+
+        p->curr_ticks++;
+        p->n_run++;
+        p->ticks[p->curr_queue]++;
+
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
+
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+
+        // TIME SLICE OF PROCESS FINISHED = shift lower priority queue
+        if (p!=0 && p->state == RUNNABLE)
+        {
+        // cprintf("bitch run please!\n");
+        // cprintf("%d\n",p->pid);
+          p->curr_ticks = 0;
+          
+          if (p->change_q == 1) 
+          {
+            p->change_q = 0;
+            if (p->curr_queue < 4) 
+            {
+              shift_proc_q(p,p->curr_queue,(p->curr_queue)+1);
+              p->curr_queue++;
+            }
+          }
+          else
+            shift_proc_q(p,p->curr_queue,p->curr_queue); // add process to same queue
+        }
+      }
+      release(&ptable.lock);
+    }
+  #endif
   #endif
   #endif
   #endif
@@ -598,8 +701,15 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  {
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+      #ifdef MLFQ
+      p->curr_ticks = 0;
+      shift_proc_q(p,-1,p->curr_queue);
+      #endif
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -625,7 +735,12 @@ kill(int pid)
       p->killed = 1;
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
+      {
         p->state = RUNNABLE;
+        #ifdef MLFQ
+        shift_proc_q(p,-1,p->curr_queue);
+        #endif
+      }
       release(&ptable.lock);
       return 0;
     }
@@ -682,25 +797,26 @@ void change_time()
     {	
       p -> rtime++;
       
-      // #ifdef MLFQ
-      // p -> ticks[p -> queueNo]++;
-      // p -> cur_time++;     
-      // #endif
+      #ifdef MLFQ
+      p -> ticks[p -> curr_queue]++;
+      p -> curr_ticks++;     
+      #endif
     }
 
-  	// else
-  	// {	
-    //   #ifdef MLFQ
-    //   if(p -> queueNo != 0 && p -> wait_time > AGE) 
-    //   {
-    //     cprintf("Aging for process %d\n", p -> pid);
-    //     p -> queueNo--;
-    //     p -> cur_time = 0;
-    //     p -> wait_time = 0;
-    //     push(p -> queueNo, p);
-    //   }
-    //   #endif
-    // }  
+  	else
+  	{
+      p->wtime++;	
+      #ifdef MLFQ
+      if(p -> curr_queue != 0 && ticks-p->curr_ticks > AGE) 
+      {
+        // cprintf("Aging for process %d\n", p -> pid);
+        p -> curr_queue--;
+        p -> curr_ticks = 0;
+        p -> wtime = 0;
+        shift_proc_q(p,-1,p->curr_queue);
+      }
+      #endif
+    }  
   }
 
   release(&ptable.lock);
@@ -776,7 +892,6 @@ int printpinfos()
     if(p->pid == 0) 
       continue;
 
-    int wtime = (p->etime - p->ctime) - (p->rtime);
     char *state;
 
     if (p->state==0) state = "UNUSED";
@@ -787,10 +902,100 @@ int printpinfos()
     else             state = "ZOMBIE";
 
     cprintf(" %d\t%d\t%s\t%d\t%d\t%d\t%d  |  %d    %d    %d    %d    %d    %d\n",
-    p-> pid, p->priority, state, p->rtime, wtime, p->n_run, p->curr_queue,
-    p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4], p->ticks[5]);
+    p-> pid, p->priority, state, p->rtime, p->wtime, p->n_run, p->curr_queue,
+    p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
   }
   release(&ptable.lock);
 
   return 0;
+}
+
+void change_q_flag(struct proc* p)
+{
+	acquire(&ptable.lock);
+	p-> change_q = 1;
+	release(&ptable.lock);
+}
+
+void incr_curr_ticks(struct proc *p)
+{
+	acquire(&ptable.lock);
+	p->curr_ticks++;
+	p->ticks[p->curr_queue]++;
+	release(&ptable.lock);
+}
+
+// remove from q_i & add in q_f
+// (p,-1,q_f) = add proc in q_f
+// (p,q_i,-1) = remove proc from q_i
+int shift_proc_q(struct proc *p, int q_i, int q_f) 
+{
+  // pop from q_i
+  if (q_f==-1)
+  {
+    int found = -1;
+    for (int i = 0; i <= q_size[q_i]; i++)
+    {
+      if (queue[q_i][i]->pid == p->pid)
+      {
+        found = i;
+        break;
+      }
+    }
+    if (found == -1) return -1;
+    
+    for (int i = found; i < q_size[q_i]; i++)
+      queue[q_i][i] = queue[q_i][i+1];
+
+    q_size[q_i]--;    
+    return 1;
+  }
+
+  // push into q_f
+  else if (q_i==-1)
+  {
+    for (int i = 0; i <= q_size[q_f]; i++)
+    {
+      if(queue[q_f][i]->pid == p->pid)
+        return -1;
+    }
+    p->enter = ticks;
+    p->curr_queue = q_f;
+    q_size[q_f]++;
+    queue[q_f][q_size[q_f]] = p;
+
+    return 1;
+  }
+
+  // actual shift
+  else 
+  {
+    int found = -1;
+    for (int i = 0; i <= q_size[q_i]; i++)
+    {
+      if (queue[q_i][i] -> pid == p->pid)
+      {
+        found = i;
+        break;
+      }
+    }
+    if (found == -1) return -1;
+    
+    for (int i = found; i < q_size[q_i]; i++)
+      queue[q_i][i] = queue[q_i][i+1];
+
+    q_size[q_i]--;    
+
+    for (int i = 0; i <= q_size[q_f]; i++)
+    {
+      if(queue[q_f][i]->pid == p->pid)
+        return -1;
+    }
+    p->enter = ticks;
+    p->curr_queue = q_f;
+    q_size[q_f]++;
+    queue[q_f][q_size[q_f]] = p;
+
+    return 1;
+  }
 }
